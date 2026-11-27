@@ -160,8 +160,8 @@ async def test_shutter_is_linked_to_its_gateway(hass: HomeAssistant) -> None:
     await _setup_entry(hass, entry)
 
     device_registry = dr.async_get(hass)
-    shutter = device_registry.async_get_device_by_identifier(
-        (DOMAIN, entry.entry_id), entry.entry_id
+    shutter = device_registry.async_get_device(
+        identifiers={(DOMAIN, entry.entry_id)}
     )
     assert shutter is not None
     assert shutter.via_device_id == gateway.id
@@ -177,8 +177,8 @@ async def test_a_namesake_device_is_not_the_gateway(hass: HomeAssistant) -> None
     entry = _make_entry()
     await _setup_entry(hass, entry)
 
-    shutter = dr.async_get(hass).async_get_device_by_identifier(
-        (DOMAIN, entry.entry_id), entry.entry_id
+    shutter = dr.async_get(hass).async_get_device(
+        identifiers={(DOMAIN, entry.entry_id)}
     )
     assert shutter is not None
     assert shutter.via_device_id == gateway.id
@@ -191,8 +191,8 @@ async def test_shutter_stands_alone_without_a_gateway(hass: HomeAssistant) -> No
     entry = _make_entry()
     await _setup_entry(hass, entry)
 
-    shutter = dr.async_get(hass).async_get_device_by_identifier(
-        (DOMAIN, entry.entry_id), entry.entry_id
+    shutter = dr.async_get(hass).async_get_device(
+        identifiers={(DOMAIN, entry.entry_id)}
     )
     assert shutter is not None
     assert shutter.via_device_id is None

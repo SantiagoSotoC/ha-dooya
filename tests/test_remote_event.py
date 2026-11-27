@@ -6,6 +6,7 @@ installed (e.g. on Windows, where the harness cannot run).
 
 from __future__ import annotations
 
+from datetime import timedelta
 import sys
 from unittest.mock import patch
 
@@ -19,6 +20,7 @@ if sys.platform == "win32":
 pytest.importorskip("pytest_homeassistant_custom_component")
 
 from homeassistant.core import HomeAssistant, callback
+from homeassistant.util import dt as dt_util
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.dooya_rf.const import (
@@ -173,7 +175,13 @@ async def test_a_second_press_after_a_pause_fires_again(
     await _setup(hass)
     with patch(CLOCK, return_value=100.0):
         await _frame(hass, DOWN)
-    with patch(CLOCK, return_value=105.0):
+    with (
+        patch(CLOCK, return_value=105.0),
+        patch(
+            "homeassistant.components.event.dt_util.utcnow",
+            return_value=dt_util.utcnow() + timedelta(seconds=1),
+        ),
+    ):
         await _frame(hass, DOWN)
     assert len(fired[EVENT_ID]) == 2
 

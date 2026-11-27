@@ -99,7 +99,7 @@ def group_channel_for(
             if remote.id != dooya_id:
                 continue
             if entry is not None and entry.entry_id != group_entry.entry_id:
-                selected = entry_value(entry, CONF_GROUP_COVERS, None)
+                selected = entry_value(group_entry, CONF_GROUP_COVERS, None)
                 if isinstance(selected, list) and entry.entry_id not in selected:
                     return None
             return remote.channel

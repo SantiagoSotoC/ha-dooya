@@ -17,6 +17,7 @@ if sys.platform == "win32":
     )
 pytest.importorskip("pytest_homeassistant_custom_component")
 
+from homeassistant.components.diagnostics.util import REDACTED
 from homeassistant.core import HomeAssistant
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
@@ -90,9 +91,8 @@ async def test_remote_id_is_redacted(hass: HomeAssistant) -> None:
     diagnostics = await async_get_config_entry_diagnostics(hass, entry)
 
     assert diagnostics["entry"]["data"][CONF_DOOYA_ID] != DOOYA_ID
-    redacted = [{CONF_DOOYA_ID: "**redacted**", CONF_CHANNEL: 241}]
-    assert diagnostics["entry"]["data"][CONF_ADDITIONAL_REMOTES] == redacted
-    assert diagnostics["entry"]["options"][CONF_ADDITIONAL_REMOTES] == redacted
+    assert diagnostics["entry"]["data"][CONF_ADDITIONAL_REMOTES] == REDACTED
+    assert diagnostics["entry"]["options"][CONF_ADDITIONAL_REMOTES] == REDACTED
     # Belt and braces: the raw value must not survive anywhere in the payload,
     # in any spelling a future field might use.
     dumped = repr(diagnostics)
@@ -118,9 +118,7 @@ async def test_non_secret_fields_are_kept(hass: HomeAssistant) -> None:
     assert data[CONF_TRAVEL_TIME_UP] == 20.0
     # Options are reported separately from data, with remote ids redacted too.
     assert diagnostics["entry"]["options"][CONF_REPEAT_COUNT] == 2
-    assert diagnostics["entry"]["options"][CONF_ADDITIONAL_REMOTES] == [
-        {CONF_DOOYA_ID: "**redacted**", CONF_CHANNEL: 241}
-    ]
+    assert diagnostics["entry"]["options"][CONF_ADDITIONAL_REMOTES] == REDACTED
 
     assert await hass.config_entries.async_unload(entry.entry_id)
 

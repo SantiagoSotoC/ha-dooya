@@ -327,7 +327,7 @@ async def test_inverted_awning_open_sends_up(
     assert hass.states.get(AWNING_ID).state == "opening"
 
 
-async def test_down_on_an_inverted_shutter_closes_it(
+async def test_down_on_an_inverted_shutter_opens_it(
     hass: HomeAssistant, frames: list[dict]
 ) -> None:
     """RX presses go through the same button-to-direction mapping."""
@@ -336,7 +336,7 @@ async def test_down_on_an_inverted_shutter_closes_it(
     _fire_frame(hass, DOWN, channel=5)
     await hass.async_block_till_done()
 
-    assert hass.states.get(INVERTED_SHUTTER_ID).state == "closing"
+    assert hass.states.get(INVERTED_SHUTTER_ID).state == "opening"
     assert frames == []
 
 

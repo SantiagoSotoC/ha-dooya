@@ -39,14 +39,12 @@
           "is_awning": "Esta persiana es un toldo (ABAJO lo despliega)",
           "invert_direction": "Invertir ARRIBA y ABAJO",
           "is_group": "Esta persiana es el botón común del mando",
-          "group_covers": "Persianas controladas por el botón común",
           "additional_remotes": "Mandos adicionales (opcional)"
         },
         "data_description": {
           "is_awning": "Marque esta opción para un toldo: ABAJO lo despliega y Home Assistant lo muestra abierto una vez desplegado. El tiempo de apertura pasa a ser el tiempo de despliegue. Déjelo sin marcar para persianas y cortinas.",
           "invert_direction": "Marque esta opción cuando ARRIBA baja la persiana y ABAJO la sube. Home Assistant sigue mostrando las posiciones habituales (abierta/desplegada = 100 %) y envía el botón físico contrario.",
           "is_group": "Marque esta opción en el equipo representante del botón «todo» del mando. Las señales recibidas en su canal resincronizan las persianas seleccionadas y ese equipo no expone posición propia. Solo una persiana por mando puede tener este rol.",
-          "group_covers": "Elija las persianas controladas por el botón común. Déjelas todas seleccionadas para controlar todas las persianas del mando, o desmarque una para excluirla.",
           "additional_remotes": "Otros mandos para esta persiana, separados por comas o saltos de línea con el formato ID_HEX:CANAL (por ejemplo: 00400A7E:241). Los comandos enviados por Home Assistant siguen usando el mando principal; estos solo registran pulsaciones físicas."
         }
       },
@@ -62,15 +60,23 @@
           "is_awning": "Esta persiana es un toldo (ABAJO lo despliega)",
           "invert_direction": "Invertir ARRIBA y ABAJO",
           "is_group": "Esta persiana es el botón común del mando",
-          "group_covers": "Persianas controladas por el botón común",
           "additional_remotes": "Mandos adicionales (opcional)"
         },
         "data_description": {
           "is_awning": "Marque esta opción para un toldo: ABAJO lo despliega y Home Assistant lo muestra abierto una vez desplegado. El tiempo de apertura pasa a ser el tiempo de despliegue. Déjelo sin marcar para persianas y cortinas.",
           "invert_direction": "Marque esta opción cuando ARRIBA baja la persiana y ABAJO la sube. Home Assistant sigue mostrando las posiciones habituales (abierta/desplegada = 100 %) y envía el botón físico contrario.",
           "is_group": "Marque esta opción en el equipo representante del botón «todo» del mando. Las señales recibidas en su canal resincronizan las persianas seleccionadas y ese equipo no expone posición propia. Solo una persiana por mando puede tener este rol.",
-          "group_covers": "Elija las persianas controladas por el botón común. Déjelas todas seleccionadas para controlar todas las persianas del mando, o desmarque una para excluirla.",
           "additional_remotes": "Otros mandos para esta persiana, separados por comas o saltos de línea con el formato ID_HEX:CANAL (por ejemplo: 00400A7E:241). Los comandos enviados por Home Assistant siguen usando el mando principal; estos solo registran pulsaciones físicas."
+        }
+      },
+      "group_covers": {
+        "title": "Persianas del botón común",
+        "description": "Seleccione las persianas del botón común; conserve marcadas todas las del mando o desmarque las que deba excluir.",
+        "data": {
+          "group_covers": "Persianas controladas por el botón común"
+        },
+        "data_description": {
+          "group_covers": "Resincroniza las persianas seleccionadas al pulsar el botón común; selección vacía: ninguna persiana."
         }
       },
       "reconfigure": {
@@ -126,7 +132,6 @@
           "repeat_count": "Repeticiones de la transmisión RF (1–3)",
           "favorite_position": "Posición favorita (%, opcional)",
           "is_group": "Esta persiana es el botón común del mando",
-          "group_covers": "Persianas controladas por el botón común",
           "is_awning": "Esta persiana es un toldo (ABAJO lo despliega)",
           "invert_direction": "Invertir ARRIBA y ABAJO",
           "repeat_remote": "Repetir pulsaciones del mando",
@@ -138,12 +143,21 @@
           "repeat_count": "Repeticiones del comando RF por acción. Aumente a 2 o 3 cuando la persiana pierde algunos comandos (interferencias RF). Predeterminado: 1.",
           "favorite_position": "Posición usada por el botón «Posición favorita» en la página del dispositivo y en la tarjeta. Déjelo vacío para ocultar el botón.",
           "is_group": "Marque esta opción en el equipo representante del botón «todo» del mando. Las señales recibidas en su canal resincronizan las persianas seleccionadas y ese equipo no expone posición propia. Solo una persiana por mando puede tener este rol.",
-          "group_covers": "Elija las persianas controladas por el botón común. Déjelas todas seleccionadas para controlar todas las persianas del mando, o desmarque una para excluirla.",
           "is_awning": "Marque esta opción para un toldo: ABAJO lo despliega y Home Assistant lo muestra abierto una vez desplegado. El tiempo de apertura pasa a ser el tiempo de despliegue. Déjelo sin marcar para persianas y cortinas.",
           "invert_direction": "Marque esta opción cuando ARRIBA baja la persiana y ABAJO la sube. Home Assistant sigue mostrando las posiciones habituales (abierta/desplegada = 100 %) y envía el botón físico contrario.",
           "repeat_remote": "Marque esta opción solo para una persiana con alcance deficiente del mando físico. Cada pulsación del mando destinada a esa persiana se reenvía por su nodo ESPHome. Los comandos enviados por Home Assistant nunca se repiten, y las órdenes de posición siguen funcionando. El botón común del mando se repite solo en la persiana con ese rol, cuando también está marcado allí.",
           "additional_remotes": "Otros mandos para esta persiana, separados por comas o saltos de línea con el formato ID_HEX:CANAL (por ejemplo: 00400A7E:241). Los comandos enviados por Home Assistant siguen usando el mando principal; estos solo registran pulsaciones físicas. Deje el campo vacío para eliminarlos.",
           "learn_additional": "Pulse un botón del nuevo mando después de guardar para detectarlo."
+        }
+      },
+      "group_covers": {
+        "title": "Persianas del botón común",
+        "description": "Seleccione las persianas del botón común; conserve marcadas todas las del mando o desmarque las que deba excluir.",
+        "data": {
+          "group_covers": "Persianas controladas por el botón común"
+        },
+        "data_description": {
+          "group_covers": "Resincroniza las persianas seleccionadas al pulsar el botón común; selección vacía: ninguna persiana."
         }
       },
       "learn_additional_confirm": {
