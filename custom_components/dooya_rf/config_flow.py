@@ -146,6 +146,24 @@ def _validate_group_covers(
     return selected, {}
 
 
+def _group_covers_schema(
+    candidates: dict[str, str], current: list[str] | None = None
+) -> vol.Schema:
+    """Schema for the follow-up step choosing the covers a group drives."""
+    default = (
+        [entry_id for entry_id in current if entry_id in candidates]
+        if current is not None
+        else list(candidates)
+    )
+    return vol.Schema(
+        {
+            vol.Required(CONF_GROUP_COVERS, default=default): cv.multi_select(
+                candidates
+            )
+        }
+    )
+
+
 def _other_group_entry(
     entries: Iterable[ConfigEntry],
     dooya_ids: set[int],
@@ -160,7 +178,7 @@ def _other_group_entry(
     return None
 
 
-def _confirm_schema(candidates: dict[str, str] | None = None) -> vol.Schema:
+def _confirm_schema() -> vol.Schema:
     return vol.Schema(
         {
             vol.Required(CONF_COVER_NAME): str,
@@ -175,10 +193,6 @@ def _confirm_schema(candidates: dict[str, str] | None = None) -> vol.Schema:
             vol.Optional(CONF_IS_AWNING, default=False): bool,
             vol.Optional(CONF_INVERT_DIRECTION, default=False): bool,
             vol.Optional(CONF_IS_GROUP, default=False): bool,
-            vol.Optional(
-                CONF_GROUP_COVERS,
-                default=[] if candidates is None else list(candidates),
-            ): cv.multi_select(candidates or {}),
             vol.Optional(CONF_ADDITIONAL_REMOTES, default=""): str,
         }
     )
@@ -278,6 +292,8 @@ class DooyaConfigFlow(ConfigFlow, domain=DOMAIN):
         self._learned_data: DooyaData | None = None
         self._esphome_device: str = ""
         self._learn_task: asyncio.Task[DooyaData | None] | None = None
+        self._pending_create: dict[str, Any] | None = None
+        self._group_candidates: dict[str, str] | None = None
 
     def _available_esphome_devices(self) -> list[str]:
         """List the ESPHome devices exposing a transmit_dooya service."""
@@ -481,7 +497,6 @@ class DooyaConfigFlow(ConfigFlow, domain=DOMAIN):
 
         errors: dict[str, str] = {}
         additional: list[dict[str, int]] = []
-        selected: list[str] = []
         if user_input is not None:
             additional, errors = _validate_additional_remotes(
                 user_input.get(CONF_ADDITIONAL_REMOTES, ""),
@@ -491,11 +506,6 @@ class DooyaConfigFlow(ConfigFlow, domain=DOMAIN):
             )
             dooya_ids = {self._learned_data.id}
             dooya_ids.update(int(remote[CONF_DOOYA_ID]) for remote in additional)
-            candidates = _group_cover_candidates(self.hass, dooya_ids)
-            selected, group_errors = _validate_group_covers(
-                user_input.get(CONF_GROUP_COVERS, []), candidates
-            )
-            errors.update(group_errors)
             if (
                 not errors
                 and user_input.get(CONF_IS_GROUP)
@@ -503,27 +513,31 @@ class DooyaConfigFlow(ConfigFlow, domain=DOMAIN):
             ):
                 errors[CONF_IS_GROUP] = "duplicate_group"
             if not errors:
-                return await self._async_create_entry(
-                    name=user_input[CONF_COVER_NAME],
-                    dooya_id=self._learned_data.id,
-                    channel=self._learned_data.channel,
-                    check=self._learned_data.check,
-                    travel_time_up=user_input[CONF_TRAVEL_TIME_UP],
-                    travel_time_down=user_input[CONF_TRAVEL_TIME_DOWN],
-                    is_awning=user_input.get(CONF_IS_AWNING, False),
-                    invert_direction=user_input.get(CONF_INVERT_DIRECTION, False),
-                    is_group=user_input.get(CONF_IS_GROUP, False),
-                    group_covers=selected,
-                    additional_remotes=additional,
-                )
-
-        dooya_ids = {self._learned_data.id}
-        dooya_ids.update(int(remote[CONF_DOOYA_ID]) for remote in additional)
-        candidates = _group_cover_candidates(self.hass, dooya_ids)
+                pending = {
+                    "name": user_input[CONF_COVER_NAME],
+                    "dooya_id": self._learned_data.id,
+                    "channel": self._learned_data.channel,
+                    "check": self._learned_data.check,
+                    "travel_time_up": user_input[CONF_TRAVEL_TIME_UP],
+                    "travel_time_down": user_input[CONF_TRAVEL_TIME_DOWN],
+                    "is_awning": user_input.get(CONF_IS_AWNING, False),
+                    "invert_direction": user_input.get(
+                        CONF_INVERT_DIRECTION, False
+                    ),
+                    "is_group": user_input.get(CONF_IS_GROUP, False),
+                    "additional_remotes": additional,
+                }
+                if user_input.get(CONF_IS_GROUP):
+                    self._pending_create = pending
+                    self._group_candidates = _group_cover_candidates(
+                        self.hass, dooya_ids
+                    )
+                    return await self.async_step_group_covers()
+                return await self._async_create_entry(**pending)
 
         return self.async_show_form(
             step_id="confirm",
-            data_schema=_confirm_schema(candidates),
+            data_schema=_confirm_schema(),
             description_placeholders={
                 "dooya_id": f"0x{self._learned_data.id:06X}",
                 "channel": str(self._learned_data.channel),
@@ -537,8 +551,6 @@ class DooyaConfigFlow(ConfigFlow, domain=DOMAIN):
         """Step 3b: manual entry of the Dooya id."""
         errors: dict[str, str] = {}
         additional: list[dict[str, int]] = []
-        dooya_ids: set[int] = set()
-        selected: list[str] = []
 
         if user_input is not None:
             try:
@@ -557,11 +569,6 @@ class DooyaConfigFlow(ConfigFlow, domain=DOMAIN):
                 dooya_ids.update(
                     int(remote[CONF_DOOYA_ID]) for remote in additional
                 )
-                candidates = _group_cover_candidates(self.hass, dooya_ids)
-                selected, group_errors = _validate_group_covers(
-                    user_input.get(CONF_GROUP_COVERS, []), candidates
-                )
-                errors.update(group_errors)
                 if (
                     not errors
                     and user_input.get(CONF_IS_GROUP)
@@ -569,21 +576,27 @@ class DooyaConfigFlow(ConfigFlow, domain=DOMAIN):
                 ):
                     errors[CONF_IS_GROUP] = "duplicate_group"
                 if not errors:
-                    return await self._async_create_entry(
-                        name=user_input[CONF_COVER_NAME],
-                        dooya_id=dooya_id,
-                        channel=user_input[CONF_CHANNEL],
-                        check=check_for_button(BUTTON_UP),
-                        travel_time_up=user_input[CONF_TRAVEL_TIME_UP],
-                        travel_time_down=user_input[CONF_TRAVEL_TIME_DOWN],
-                        is_awning=user_input.get(CONF_IS_AWNING, False),
-                        invert_direction=user_input.get(CONF_INVERT_DIRECTION, False),
-                        is_group=user_input.get(CONF_IS_GROUP, False),
-                        group_covers=selected,
-                        additional_remotes=additional,
-                    )
-
-        candidates = _group_cover_candidates(self.hass, dooya_ids)
+                    pending = {
+                        "name": user_input[CONF_COVER_NAME],
+                        "dooya_id": dooya_id,
+                        "channel": user_input[CONF_CHANNEL],
+                        "check": check_for_button(BUTTON_UP),
+                        "travel_time_up": user_input[CONF_TRAVEL_TIME_UP],
+                        "travel_time_down": user_input[CONF_TRAVEL_TIME_DOWN],
+                        "is_awning": user_input.get(CONF_IS_AWNING, False),
+                        "invert_direction": user_input.get(
+                            CONF_INVERT_DIRECTION, False
+                        ),
+                        "is_group": user_input.get(CONF_IS_GROUP, False),
+                        "additional_remotes": additional,
+                    }
+                    if user_input.get(CONF_IS_GROUP):
+                        self._pending_create = pending
+                        self._group_candidates = _group_cover_candidates(
+                            self.hass, dooya_ids
+                        )
+                        return await self.async_step_group_covers()
+                    return await self._async_create_entry(**pending)
 
         return self.async_show_form(
             step_id="manual",
@@ -605,12 +618,38 @@ class DooyaConfigFlow(ConfigFlow, domain=DOMAIN):
                     vol.Optional(CONF_IS_AWNING, default=False): bool,
                     vol.Optional(CONF_INVERT_DIRECTION, default=False): bool,
                     vol.Optional(CONF_IS_GROUP, default=False): bool,
-                    vol.Optional(CONF_GROUP_COVERS, default=list(candidates)): (
-                        cv.multi_select(candidates)
-                    ),
                     vol.Optional(CONF_ADDITIONAL_REMOTES, default=""): str,
                 }
             ),
+            errors=errors,
+        )
+
+    async def async_step_group_covers(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Choose the covers a newly configured common button drives."""
+        assert self._pending_create is not None
+        assert self._group_candidates is not None
+        errors: dict[str, str] = {}
+
+        if user_input is not None:
+            selected, errors = _validate_group_covers(
+                user_input.get(CONF_GROUP_COVERS, []), self._group_candidates
+            )
+            if not errors:
+                pending = self._pending_create
+                group_covers = (
+                    None if set(selected) == set(self._group_candidates) else selected
+                )
+                self._pending_create = None
+                self._group_candidates = None
+                return await self._async_create_entry(
+                    **pending, group_covers=group_covers
+                )
+
+        return self.async_show_form(
+            step_id="group_covers",
+            data_schema=_group_covers_schema(self._group_candidates),
             errors=errors,
         )
 
@@ -757,6 +796,9 @@ class DooyaOptionsFlow(OptionsFlow):
         self._pending_options: dict[str, Any] | None = None
         self._learn_task: asyncio.Task[DooyaData | None] | None = None
         self._learned_data: DooyaData | None = None
+        self._group_candidates: dict[str, str] | None = None
+        self._group_covers_default: list[str] | None = None
+        self._pending_learn_additional = False
 
     async def async_step_init(
         self, user_input: dict[str, Any] | None = None
@@ -784,16 +826,6 @@ class DooyaOptionsFlow(OptionsFlow):
         )
         current_repeat_remote = bool(entry_value(entry, CONF_REPEAT_REMOTE, False))
         current_secondaries = entry_remotes(entry)[1:]
-        dooya_ids = {remote.id for remote in entry_remotes(entry)}
-        candidates = _group_cover_candidates(
-            self.hass, dooya_ids, ignore_entry_id=entry.entry_id
-        )
-        raw_group_covers = entry_value(entry, CONF_GROUP_COVERS, None)
-        current_group_covers = (
-            [entry_id for entry_id in raw_group_covers if entry_id in candidates]
-            if isinstance(raw_group_covers, list)
-            else list(candidates)
-        )
         errors: dict[str, str] = {}
 
         if user_input is not None:
@@ -809,13 +841,6 @@ class DooyaOptionsFlow(OptionsFlow):
             submitted_dooya_ids.update(
                 int(remote[CONF_DOOYA_ID]) for remote in additional
             )
-            candidates = _group_cover_candidates(
-                self.hass, submitted_dooya_ids, ignore_entry_id=entry.entry_id
-            )
-            selected, group_errors = _validate_group_covers(
-                user_input.get(CONF_GROUP_COVERS, []), candidates
-            )
-            errors.update(group_errors)
             if (
                 not errors
                 and user_input.get(CONF_IS_GROUP)
@@ -830,8 +855,28 @@ class DooyaOptionsFlow(OptionsFlow):
                 learn_additional = bool(user_input.get(CONF_LEARN_ADDITIONAL, False))
                 data = dict(user_input)
                 data.pop(CONF_LEARN_ADDITIONAL, None)
+                data.pop(CONF_GROUP_COVERS, None)
                 data[CONF_ADDITIONAL_REMOTES] = additional
-                data[CONF_GROUP_COVERS] = selected
+                if user_input.get(CONF_IS_GROUP):
+                    candidates = _group_cover_candidates(
+                        self.hass,
+                        submitted_dooya_ids,
+                        ignore_entry_id=entry.entry_id,
+                    )
+                    raw_group_covers = entry_value(entry, CONF_GROUP_COVERS, None)
+                    self._group_covers_default = (
+                        [
+                            entry_id
+                            for entry_id in raw_group_covers
+                            if entry_id in candidates
+                        ]
+                        if isinstance(raw_group_covers, list)
+                        else list(candidates)
+                    )
+                    self._group_candidates = candidates
+                    self._pending_options = data
+                    self._pending_learn_additional = learn_additional
+                    return await self.async_step_group_covers()
                 if learn_additional:
                     self._pending_options = data
                     return await self.async_step_learn_additional()
@@ -879,9 +924,6 @@ class DooyaOptionsFlow(OptionsFlow):
                 ): vol.All(int, vol.Range(min=1, max=3)),
                 favorite_field: vol.All(vol.Coerce(int), vol.Range(min=0, max=100)),
                 vol.Required(CONF_IS_GROUP, default=current_is_group): bool,
-                vol.Required(
-                    CONF_GROUP_COVERS, default=current_group_covers
-                ): cv.multi_select(candidates),
                 vol.Required(CONF_IS_AWNING, default=current_is_awning): bool,
                 vol.Required(
                     CONF_INVERT_DIRECTION,
@@ -899,6 +941,37 @@ class DooyaOptionsFlow(OptionsFlow):
         return self.async_show_form(
             step_id="init",
             data_schema=vol.Schema(schema),
+            errors=errors,
+        )
+
+    async def async_step_group_covers(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Choose the covers a group drives after the remote list is validated."""
+        assert self._pending_options is not None
+        assert self._group_candidates is not None
+        errors: dict[str, str] = {}
+
+        if user_input is not None:
+            selected, errors = _validate_group_covers(
+                user_input.get(CONF_GROUP_COVERS, []), self._group_candidates
+            )
+            if not errors:
+                self._pending_options[CONF_GROUP_COVERS] = (
+                    None if set(selected) == set(self._group_candidates) else selected
+                )
+                self._group_candidates = None
+                self._group_covers_default = None
+                if self._pending_learn_additional:
+                    self._pending_learn_additional = False
+                    return await self.async_step_learn_additional()
+                return self.async_create_entry(data=self._pending_options)
+
+        return self.async_show_form(
+            step_id="group_covers",
+            data_schema=_group_covers_schema(
+                self._group_candidates, self._group_covers_default
+            ),
             errors=errors,
         )
 
@@ -970,13 +1043,15 @@ class DooyaOptionsFlow(OptionsFlow):
             remotes.append(
                 DooyaRemote(self._learned_data.id, self._learned_data.channel)
             )
-            additional, errors = _validate_additional_remotes(
+            additional, field_errors = _validate_additional_remotes(
                 format_remote_list(remotes),
                 int(self._config_entry.data[CONF_DOOYA_ID]),
                 int(self._config_entry.data[CONF_CHANNEL]),
                 self.hass.config_entries.async_entries(DOMAIN),
                 ignore_entry_id=self._config_entry.entry_id,
             )
+            if field_errors:
+                errors["base"] = next(iter(field_errors.values()))
             if not errors:
                 self._pending_options[CONF_ADDITIONAL_REMOTES] = additional
                 return self.async_create_entry(data=self._pending_options)

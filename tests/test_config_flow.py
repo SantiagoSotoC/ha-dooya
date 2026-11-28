@@ -42,6 +42,7 @@ from custom_components.dooya_rf.const import (
     CONF_TRAVEL_TIME_DOWN,
     CONF_TRAVEL_TIME_UP,
     DOMAIN,
+    entry_value,
 )
 
 GATEWAY_SLUG = "volets-dooya-rf433"
@@ -653,6 +654,17 @@ async def _add_cover(
     return entry
 
 
+async def _choose_group_covers(
+    hass: HomeAssistant, result: dict, selected: list[str]
+) -> dict:
+    """Submit the follow-up step shown for a group."""
+    assert result["type"] is FlowResultType.FORM
+    assert result["step_id"] == "group_covers"
+    return await hass.config_entries.options.async_configure(
+        result["flow_id"], {CONF_GROUP_COVERS: selected}
+    )
+
+
 async def _manual_flow_result(
     hass: HomeAssistant,
     *,
@@ -678,7 +690,13 @@ async def _manual_flow_result(
     }
     if extra:
         payload.update(extra)
+    group_covers = payload.pop(CONF_GROUP_COVERS, None)
     result = await hass.config_entries.flow.async_configure(result["flow_id"], payload)
+    if result.get("step_id") == "group_covers":
+        assert group_covers is not None
+        result = await hass.config_entries.flow.async_configure(
+            result["flow_id"], {CONF_GROUP_COVERS: group_covers}
+        )
     await hass.async_block_till_done()
     return result
 
@@ -693,6 +711,7 @@ async def test_options_can_mark_a_cover_as_the_common_button(
     result = await hass.config_entries.options.async_configure(
         result["flow_id"], {**OPTIONS_BASE, CONF_IS_GROUP: True}
     )
+    result = await _choose_group_covers(hass, result, [])
     await hass.async_block_till_done()
 
     assert result["type"] is FlowResultType.CREATE_ENTRY
@@ -756,10 +775,30 @@ async def test_manual_entry_can_select_which_covers_a_group_drives(
     assert result["data"][CONF_GROUP_COVERS] == [salon.entry_id]
 
 
+async def test_manual_entry_leaves_all_covers_unrestricted(
+    hass: HomeAssistant, gateway_service: list[dict]
+) -> None:
+    salon = await _add_cover(hass, channel=5, name="Salon")
+    cuisine = await _add_cover(hass, channel=6, name="Cuisine")
+
+    result = await _manual_flow_result(
+        hass,
+        name="All shutters",
+        channel=80,
+        extra={
+            CONF_IS_GROUP: True,
+            CONF_GROUP_COVERS: [salon.entry_id, cuisine.entry_id],
+        },
+    )
+
+    assert result["type"] is FlowResultType.CREATE_ENTRY
+    assert CONF_GROUP_COVERS not in result["data"]
+
+
 async def test_manual_entry_can_create_a_group_with_no_covers(
     hass: HomeAssistant, gateway_service: list[dict]
 ) -> None:
-    await _add_cover(hass, channel=5, name="Salon")
+    salon = await _add_cover(hass, channel=5, name="Salon")
 
     result = await _manual_flow_result(
         hass,
@@ -770,11 +809,13 @@ async def test_manual_entry_can_create_a_group_with_no_covers(
 
     assert result["type"] is FlowResultType.CREATE_ENTRY
     assert result["data"][CONF_GROUP_COVERS] == []
+    assert salon.entry_id not in result["data"][CONF_GROUP_COVERS]
 
 
 async def test_manual_entry_accepts_a_cover_reached_through_an_extra_remote(
     hass: HomeAssistant, gateway_service: list[dict]
 ) -> None:
+    await _add_cover(hass, channel=5, name="Salon")
     garage = await _add_cover(
         hass, channel=7, name="Garage", dooya_id=0xABCDEF
     )
@@ -821,17 +862,36 @@ async def test_options_can_limit_the_common_button_to_selected_covers(
 
     result = await hass.config_entries.options.async_init(group.entry_id)
     result = await hass.config_entries.options.async_configure(
-        result["flow_id"],
-        {
-            **OPTIONS_BASE,
-            CONF_IS_GROUP: True,
-            CONF_GROUP_COVERS: [salon.entry_id],
-        },
+        result["flow_id"], {**OPTIONS_BASE, CONF_IS_GROUP: True}
     )
+    result = await _choose_group_covers(hass, result, [salon.entry_id])
     await hass.async_block_till_done()
 
     assert result["type"] is FlowResultType.CREATE_ENTRY
     assert group.options[CONF_GROUP_COVERS] == [salon.entry_id]
+
+
+async def test_options_group_covers_include_a_cover_from_an_additional_remote(
+    hass: HomeAssistant, gateway_service: list[dict]
+) -> None:
+    await _add_cover(hass, channel=5, name="Salon")
+    garage = await _add_cover(hass, channel=7, name="Garage", dooya_id=0xABCDEF)
+    group = await _add_cover(hass, channel=80, name="All shutters")
+
+    result = await hass.config_entries.options.async_init(group.entry_id)
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"],
+        {
+            **OPTIONS_BASE,
+            CONF_IS_GROUP: True,
+            CONF_ADDITIONAL_REMOTES: "ABCDEF:6",
+        },
+    )
+    result = await _choose_group_covers(hass, result, [garage.entry_id])
+    await hass.async_block_till_done()
+
+    assert result["type"] is FlowResultType.CREATE_ENTRY
+    assert group.options[CONF_GROUP_COVERS] == [garage.entry_id]
 
 
 async def test_options_can_clear_the_common_button_selection(
@@ -842,12 +902,43 @@ async def test_options_can_clear_the_common_button_selection(
 
     result = await hass.config_entries.options.async_init(group.entry_id)
     result = await hass.config_entries.options.async_configure(
-        result["flow_id"], {**OPTIONS_BASE, CONF_GROUP_COVERS: []}
+        result["flow_id"], {**OPTIONS_BASE, CONF_IS_GROUP: True}
     )
+    result = await _choose_group_covers(hass, result, [])
     await hass.async_block_till_done()
 
     assert result["type"] is FlowResultType.CREATE_ENTRY
     assert group.options[CONF_GROUP_COVERS] == []
+
+
+async def test_options_store_none_when_all_covers_are_selected(
+    hass: HomeAssistant, gateway_service: list[dict]
+) -> None:
+    salon = await _add_cover(hass, channel=5, name="Salon")
+    cuisine = await _add_cover(hass, channel=6, name="Cuisine")
+    group = await _add_cover(
+        hass,
+        channel=80,
+        name="All shutters",
+        options={CONF_IS_GROUP: True, CONF_GROUP_COVERS: [salon.entry_id]},
+    )
+    hass.config_entries.async_update_entry(
+        group,
+        data={**group.data, CONF_GROUP_COVERS: [salon.entry_id]},
+    )
+
+    result = await hass.config_entries.options.async_init(group.entry_id)
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"], {**OPTIONS_BASE, CONF_IS_GROUP: True}
+    )
+    result = await _choose_group_covers(
+        hass, result, [salon.entry_id, cuisine.entry_id]
+    )
+    await hass.async_block_till_done()
+
+    assert result["type"] is FlowResultType.CREATE_ENTRY
+    assert group.options[CONF_GROUP_COVERS] is None
+    assert entry_value(group, CONF_GROUP_COVERS, "fallback") is None
 
 
 def test_group_cover_validation_keeps_a_clean_selection() -> None:
@@ -891,7 +982,7 @@ async def test_options_store_and_show_additional_remotes(
     field = next(
         key for key in result["data_schema"].schema if key == CONF_ADDITIONAL_REMOTES
     )
-    assert field.default() == "00400A7E:241"
+    assert field.default() == "400A7E:241"
 
 
 async def test_options_can_clear_additional_remotes(
